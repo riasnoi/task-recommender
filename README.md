@@ -19,6 +19,73 @@
 
 ---
 
+## Текущая реализация (MVP)
+- FastAPI-сервис с PostgreSQL (подключение из `.env`), при старте создаёт таблицы и сидирует `user-1` и `task-1`.
+- RabbitMQ: публикуем события `task.published` и `attempt.submitted` (worker планируется).
+- Redis: кеш плана и рекомендаций.
+- Qdrant: коллекция `tasks`, псевдо-эмбеддинги для задач.
+- Neo4j: граф тем (seed sql.basics -> sql.joins) для штрафов/бонусов в рекомендациях.
+
+### Запуск
+```bash
+cd task-recommender
+docker-compose up --build
+```
+
+### Быстрая проверка API
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/api/v1/tasks
+curl -X POST http://localhost:8000/api/v1/tasks/task-1/publish
+curl -X POST http://localhost:8000/api/v1/attempts -H "Content-Type: application/json" \
+  -d '{"taskId":"task-1","answer":"SELECT 1","answerLang":"sql"}'
+curl http://localhost:8000/api/v1/recommendations
+```
+> Требуется доступный PostgreSQL/Redis/Qdrant/Neo4j/RabbitMQ. В docker-compose они поднимаются локально (порты проброшены на 10001/10004/10005/10008/15672).
+
+### Текущая схема сервисов
+
+```mermaid
+flowchart LR
+    Client -->|REST| API[FastAPI]
+    API --> PG[(PostgreSQL)]
+    API --> R[(Redis cache)]
+    API --> QD[(Qdrant)]
+    API --> G[(Neo4j)]
+    API -- publish task.published / attempt.submitted --> MQ[(RabbitMQ)]
+    MQ --> Worker[(Worker TODO)]
+```
+
+### Пайплайн попытки (MVP)
+
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant API as FastAPI
+    participant MEM as In-memory
+    participant MQ as RabbitMQ
+
+    U->>API: POST /api/v1/attempts
+    API->>MEM: сохраняем попытку (status=queued)
+    API->>MQ: publish attempt.submitted
+    API-->>U: attemptId, status=queued
+```
+
+### Пайплайн публикации задачи (MVP)
+
+```mermaid
+sequenceDiagram
+    actor Admin
+    participant API as FastAPI
+    participant MEM as In-memory
+    participant MQ as RabbitMQ
+
+    Admin->>API: POST /api/v1/tasks/{id}/publish
+    API->>MEM: published=true
+    API->>MQ: publish task.published
+    API-->>Admin: {taskId, status: published}
+```
+
 ## Взаимодействие пользователя с системой
 
 ```mermaid
@@ -175,4 +242,3 @@ flowchart LR
 * **Diversity**: штраф за однотипные задачи подряд
 
 Результат: топ-N задач + `reasons` (JSON), чтобы было прозрачно почему система так решила.
-
