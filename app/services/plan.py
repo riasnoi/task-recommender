@@ -20,6 +20,15 @@ class PlanService:
         self.db = db
         self.redis = get_redis_client()
 
+    @staticmethod
+    def _to_schema(item: PlanItemModel) -> PlanItem:
+        return PlanItem(
+            itemId=item.item_id,
+            taskId=item.task_id,
+            due=item.due,
+            status=item.status,
+        )
+
     def _ensure_plan_for_today(self) -> None:
         if not self.repo.today("user-1"):
             tasks = self.tasks_repo.list(topic=None, difficulty=None, tags=None)
@@ -48,14 +57,14 @@ class PlanService:
             return [PlanItem(**item) for item in data]
         self._ensure_plan_for_today()
         items = self.repo.today("user-1")
-        result = [PlanItem(**asdict(item)) for item in items]
+        result = [self._to_schema(item) for item in items]
         self.redis.setex("plan:user-1:today", 300, json.dumps([item.dict() for item in result]))
         return result
 
     def plan_range(self, from_: date, to: date) -> PlanRange:
         self._ensure_plan_for_today()
         items = self.repo.range("user-1", from_=from_, to=to)
-        return PlanRange(from_=from_, to=to, items=[PlanItem(**asdict(item)) for item in items])
+        return PlanRange(from_=from_, to=to, items=[self._to_schema(item) for item in items])
 
     def complete_item(self, item_id: str) -> dict:
         item = self.repo.complete(item_id)

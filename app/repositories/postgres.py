@@ -205,7 +205,9 @@ class PostgresRecommendationRepository(RecommendationRepository):
 
     def save_run(self, run: RecommendationRunModel) -> RecommendationRunModel:
         entity = RecommendationRun(run_id=run.run_id, user_id=run.user_id, created_at=run.created_at or datetime.utcnow())
+        # ensure parent row exists before inserting children
         self.db.merge(entity)
+        self.db.flush()
         self.db.query(RecommendationItem).filter(RecommendationItem.run_id == run.run_id).delete()
         for item in run.items:
             self.db.add(

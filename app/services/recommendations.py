@@ -3,7 +3,7 @@ import json
 import random
 from dataclasses import asdict
 from datetime import datetime
-from uuid import uuid4
+from uuid import uuid4, uuid5, NAMESPACE_DNS
 
 from qdrant_client.models import Distance, VectorParams
 from sqlalchemy.orm import Session
@@ -30,7 +30,10 @@ class RecommendationService:
     def _ensure_collection(self) -> None:
         existing = [col.name for col in self.qdrant.get_collections().collections]
         if self.collection_name not in existing:
-            self.qdrant.create_collection(self.collection_name, vectors=VectorParams(size=8, distance=Distance.COSINE))
+            self.qdrant.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=VectorParams(size=8, distance=Distance.COSINE),
+            )
 
     def _ensure_graph(self) -> None:
         with self.neo4j_driver.session() as session:
@@ -47,7 +50,8 @@ class RecommendationService:
         tasks = self.tasks_repo.list(topic=None, difficulty=None, tags=None)
         points = []
         for task in tasks:
-            points.append({"id": task.id, "vector": self._vector_for_task(task.id), "payload": {"topic": task.topic}})
+            point_id = str(uuid5(NAMESPACE_DNS, task.id))
+            points.append({"id": point_id, "vector": self._vector_for_task(task.id), "payload": {"topic": task.topic, "task_id": task.id}})
         if points:
             self.qdrant.upsert(collection_name=self.collection_name, points=points)
 
@@ -75,6 +79,15 @@ class RecommendationService:
             items.append(RecommendationItemModel(task_id=task.id, rank=idx + 1, score=score, reasons=["seed", f"graph_boost:{graph_score}"]))
         return RecommendationRunModel(run_id=str(uuid4()), user_id="user-1", items=items, created_at=datetime.utcnow())
 
+    @staticmethod
+    def _to_schema(item: RecommendationItemModel) -> RecommendationItem:
+        return RecommendationItem(
+            taskId=item.task_id,
+            rank=item.rank,
+            score=item.score,
+            reasons=item.reasons,
+        )
+
     def get_recommendations(self) -> RecommendationResponse:
         cached = self.redis.get("recs:user-1")
         if cached:
@@ -86,7 +99,7 @@ class RecommendationService:
             self.repo.save_run(run)
         response = RecommendationResponse(
             runId=run.run_id,
-            items=[RecommendationItem(**asdict(item)) for item in run.items],
+            items=[self._to_schema(item) for item in run.items],
         )
         self.redis.setex("recs:user-1", 300, response.json())
         return response

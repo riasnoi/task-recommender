@@ -40,7 +40,8 @@ curl -X POST http://localhost:8000/api/v1/tasks/task-1/publish
 curl -X POST http://localhost:8000/api/v1/attempts -H "Content-Type: application/json" \
   -d '{"taskId":"task-1","answer":"SELECT 1","answerLang":"sql"}'
 curl http://localhost:8000/api/v1/recommendations
-```
+curl http://localhost:8000/ui   # простой web-интерфейс (также доступен как /api/v1/ui)
+``` 
 > Требуется доступный PostgreSQL/Redis/Qdrant/Neo4j/RabbitMQ. В docker-compose они поднимаются локально (порты проброшены на 10001/10004/10005/10008/15672).
 
 ### Текущая схема сервисов
@@ -242,3 +243,8 @@ flowchart LR
 * **Diversity**: штраф за однотипные задачи подряд
 
 Результат: топ-N задач + `reasons` (JSON), чтобы было прозрачно почему система так решила.
+
+Пересчет рекомендаций:
+```
+curl -X POST http://localhost:8000/api/v1/recommendations/recompute
+```

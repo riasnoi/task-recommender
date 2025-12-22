@@ -3,6 +3,7 @@ import logging
 from fastapi import FastAPI
 
 from .api.router import api_router
+from .api import ui
 from .db import Base, engine
 from .config import get_settings
 from .db_models import Task, User
@@ -23,6 +24,7 @@ def health():
 
 
 app.include_router(api_router, prefix="/api/v1")
+app.include_router(ui.router)  # доступен /ui без префикса
 
 
 @app.on_event("startup")
